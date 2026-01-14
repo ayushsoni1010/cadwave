@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "postinstall": "mkdir -p public && cp -f node_modules/occt-import-js/dist/occt-import-js.wasm public/ 2>/dev/null || true"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
@@ -51,6 +52,7 @@
     "lucide-react": "^0.562.0",
     "next": "16.1.1",
     "next-themes": "^0.4.6",
+    "occt-import-js": "^0.0.23",
     "react": "19.2.3",
     "react-day-picker": "^9.13.0",
     "react-dom": "19.2.3",
