@@ -5,7 +5,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { 
   SceneManager, 
-  loadCADFile, 
+  loadCADFile,
+  loadCADFiles,
   FrameMonitor, 
   GestureController,
   DEFAULT_VIEWER_CONFIG,
@@ -189,14 +190,51 @@ export function ViewerShell({ initialConfig = {} }: ViewerShellProps) {
     sceneManagerRef.current?.setExplodeFactor(explodeFactor);
   }, [explodeFactor]);
   
-  // Handle file loading
-  const handleLoadFile = useCallback(async (file: File) => {
+  // Handle file loading (single or multiple files)
+  const handleLoadFile = useCallback(async (fileOrFiles: File | File[]) => {
     setLoadingProgress({ stage: 'fetching', progress: 0, message: 'Starting...' });
     
     try {
-      const loadedAssembly = await loadCADFile(file, (progress) => {
-        setLoadingProgress(progress);
+      const files = Array.isArray(fileOrFiles) ? fileOrFiles : [fileOrFiles];
+      
+      // Check if we have MTL-only files
+      const allMTL = files.every(f => {
+        const ext = f.name.split('.').pop()?.toLowerCase();
+        return ext === 'mtl';
       });
+      
+      if (allMTL && files.length > 0) {
+        // Load MTL file(s) - they'll be cached for later use with OBJ
+        for (const file of files) {
+          await loadCADFile(file, (progress) => {
+            setLoadingProgress(progress);
+          });
+        }
+        toast.success('MTL file(s) loaded', {
+          description: 'Materials cached. Load the associated .obj file to apply them.',
+        });
+        setTimeout(() => setLoadingProgress(null), 1000);
+        return;
+      }
+      
+      // Load CAD file(s)
+      const loadedAssembly = files.length > 1
+        ? await loadCADFiles(files, (progress) => {
+            setLoadingProgress(progress);
+          })
+        : await loadCADFile(files[0], (progress) => {
+            setLoadingProgress(progress);
+          });
+      
+      // Check if this was just an MTL file (returns minimal assembly with no parts)
+      if (loadedAssembly.format === 'obj' && loadedAssembly.parts.length === 0 && 
+          loadedAssembly.metadata?.properties?.isMTLFile) {
+        toast.success('MTL file loaded and cached', {
+          description: 'Load the associated .obj file to apply materials.',
+        });
+        setTimeout(() => setLoadingProgress(null), 1000);
+        return;
+      }
       
       setAssembly(loadedAssembly);
       sceneManagerRef.current?.loadAssembly(loadedAssembly);
@@ -218,9 +256,10 @@ export function ViewerShell({ initialConfig = {} }: ViewerShellProps) {
   
   // Handle file input
   const handleFileInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      handleLoadFile(file);
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      const fileArray = Array.from(files);
+      handleLoadFile(fileArray.length > 1 ? fileArray : fileArray[0]);
     }
     e.target.value = ''; // Reset input
   }, [handleLoadFile]);
@@ -240,9 +279,9 @@ export function ViewerShell({ initialConfig = {} }: ViewerShellProps) {
     e.preventDefault();
     setIsDragging(false);
     
-    const file = e.dataTransfer.files[0];
-    if (file) {
-      handleLoadFile(file);
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length > 0) {
+      handleLoadFile(files.length > 1 ? files : files[0]);
     }
   }, [handleLoadFile]);
   
@@ -390,7 +429,8 @@ export function ViewerShell({ initialConfig = {} }: ViewerShellProps) {
       <input
         ref={fileInputRef}
         type="file"
-        accept=".stl,.obj,.gltf,.glb,.step,.stp,.iges,.igs"
+        accept=".stl,.obj,.gltf,.glb,.step,.stp,.iges,.igs,.3ds,.max,.mtl"
+        multiple
         onChange={handleFileInputChange}
         className="hidden"
       />
