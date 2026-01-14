@@ -12,6 +12,7 @@ export * from './constants';
 // CAD Pipeline
 export {
   loadCADFile,
+  loadCADFiles,
   loadCADFromURL,
   loadCADBuffer,
   getAssemblyStats,

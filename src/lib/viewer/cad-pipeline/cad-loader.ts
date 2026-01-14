@@ -9,10 +9,15 @@ import { detectFormat, isFormatSupported, getParserRecommendation } from './form
 import { parseSTL } from './stl-parser';
 import { parseOBJ } from './obj-parser';
 import { parseSTEP } from './step-parser';
+import { parse3DS } from './tds-parser';
+import { parseMTL, type MTLFile } from './mtl-parser';
 import { getGeometryCache } from './geometry-cache';
 import { FILE_LIMITS } from '../constants';
 
 export type ProgressCallback = (progress: LoadingProgress) => void;
+
+// Cache for MTL files (keyed by base filename without extension)
+const mtlCache = new Map<string, MTLFile>();
 
 /**
  * Load a CAD file from a File object
@@ -149,8 +154,51 @@ export async function loadCADBuffer(
   // Detect format
   const format = detectFormat(fileName, buffer);
   
+  // Handle MTL files specially - parse and cache them
+  if (format === 'mtl') {
+    onProgress?.({
+      stage: 'parsing',
+      progress: 50,
+      message: 'Parsing MTL file...',
+    });
+    
+    const mtlFile = parseMTL(buffer, fileName);
+    const baseName = getBaseFileName(fileName);
+    mtlCache.set(baseName, mtlFile);
+    
+    onProgress?.({
+      stage: 'complete',
+      progress: 100,
+      message: 'MTL file loaded and cached',
+    });
+    
+    // For MTL files, we cache them but don't return a renderable assembly
+    // Return a minimal assembly indicating MTL was loaded successfully
+    // The actual OBJ file should be loaded next to use the materials
+    const assembly: CADAssembly = {
+      id: crypto.randomUUID(),
+      name: baseName,
+      format: 'obj', // Use 'obj' since MTL is part of OBJ workflow
+      parts: [],
+      geometries: new Map(),
+      rootPartIds: [],
+      totalTriangles: 0,
+      fileSize: buffer.byteLength,
+      loadedAt: Date.now(),
+      metadata: {
+        fileName,
+        properties: {
+          isMTLFile: true,
+          materialCount: mtlFile.materials.size,
+        },
+      },
+    };
+    
+    return assembly;
+  }
+  
   if (!isFormatSupported(format)) {
-    const recommendation = getParserRecommendation(format);
+    const recommendation = getParserRecommendation(format, fileName);
     throw new Error(
       `Format not supported: ${format}. ${recommendation || ''}`
     );
@@ -162,6 +210,20 @@ export async function loadCADBuffer(
     message: `Parsing ${format.toUpperCase()} file...`,
   });
   
+  // For OBJ files, try to find cached MTL file
+  let mtlFile: MTLFile | null = null;
+  if (format === 'obj') {
+    const baseName = getBaseFileName(fileName);
+    if (mtlCache.has(baseName)) {
+      mtlFile = mtlCache.get(baseName)!;
+      onProgress?.({
+        stage: 'parsing',
+        progress: 26,
+        message: 'Found and applying MTL materials...',
+      });
+    }
+  }
+  
   // Parse based on format
   const assembly = await parseByFormat(buffer, fileName, format, (p, msg) => {
     onProgress?.({
@@ -169,7 +231,7 @@ export async function loadCADBuffer(
       progress: 25 + p * 0.5, // 25-75%
       message: msg,
     });
-  });
+  }, mtlFile);
   
   onProgress?.({
     stage: 'optimizing',
@@ -196,15 +258,20 @@ async function parseByFormat(
   buffer: ArrayBuffer,
   fileName: string,
   format: CADFormat,
-  onProgress: (progress: number, message: string) => void
+  onProgress: (progress: number, message: string) => void,
+  mtlFile?: MTLFile | null
 ): Promise<CADAssembly> {
   switch (format) {
     case 'stl':
       return parseSTL(buffer, fileName, onProgress);
     case 'obj':
-      return parseOBJ(buffer, fileName, onProgress);
+      return parseOBJ(buffer, fileName, onProgress, mtlFile);
     case 'step':
       return parseSTEP(buffer, fileName, onProgress);
+    case '3ds':
+      return parse3DS(buffer, fileName, onProgress);
+    case 'mtl':
+      throw new Error('MTL files must be loaded with their associated OBJ file. Please load the .obj file instead.');
     case 'gltf':
       // GLTF loading will be handled by Three.js GLTFLoader
       // For now, throw an error - we'll integrate later
@@ -244,6 +311,59 @@ function readFileAsArrayBuffer(
     
     reader.readAsArrayBuffer(file);
   });
+}
+
+/**
+ * Get base filename without extension
+ */
+function getBaseFileName(fileName: string): string {
+  const lastSlash = Math.max(fileName.lastIndexOf('/'), fileName.lastIndexOf('\\'));
+  const name = lastSlash >= 0 ? fileName.slice(lastSlash + 1) : fileName;
+  const lastDot = name.lastIndexOf('.');
+  return lastDot >= 0 ? name.slice(0, lastDot) : name;
+}
+
+/**
+ * Load multiple CAD files (e.g., OBJ + MTL)
+ * This is useful when loading OBJ files with associated MTL files
+ */
+export async function loadCADFiles(
+  files: File[],
+  onProgress?: ProgressCallback
+): Promise<CADAssembly> {
+  if (files.length === 0) {
+    throw new Error('No files provided');
+  }
+  
+  // Sort files: MTL files first, then other files
+  const sortedFiles = [...files].sort((a, b) => {
+    const aExt = a.name.split('.').pop()?.toLowerCase();
+    const bExt = b.name.split('.').pop()?.toLowerCase();
+    if (aExt === 'mtl' && bExt !== 'mtl') return -1;
+    if (aExt !== 'mtl' && bExt === 'mtl') return 1;
+    return 0;
+  });
+  
+  // Load MTL files first
+  for (const file of sortedFiles) {
+    const format = detectFormat(file.name, await file.arrayBuffer());
+    if (format === 'mtl') {
+      await loadCADFile(file, onProgress);
+    }
+  }
+  
+  // Find the main CAD file (non-MTL)
+  const mainFile = sortedFiles.find(file => {
+    const ext = file.name.split('.').pop()?.toLowerCase();
+    return ext !== 'mtl';
+  });
+  
+  if (!mainFile) {
+    throw new Error('No valid CAD file found (only MTL files provided)');
+  }
+  
+  // Load the main file (which will now find the cached MTL files)
+  return loadCADFile(mainFile, onProgress);
 }
 
 /**
