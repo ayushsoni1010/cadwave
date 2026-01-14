@@ -1,24 +1,31 @@
 /**
  * OBJ Parser
- * High-performance Wavefront OBJ file parser with multi-part support
+ * High-performance Wavefront OBJ file parser with multi-part support and MTL material support
  */
 
 import type { CADAssembly, CADPart, CADGeometry, BoundingBox, BoundingSphere } from '../types';
+import { parseMTL, mtlToCADMaterial, type MTLFile } from './mtl-parser';
 
 interface OBJGroup {
   name: string;
   vertexIndices: number[];
   normalIndices: number[];
   uvIndices: number[];
+  materialName?: string;
 }
 
 /**
  * Parse OBJ file
+ * @param buffer - OBJ file content
+ * @param fileName - Name of the OBJ file
+ * @param onProgress - Progress callback
+ * @param mtlFile - Optional pre-loaded MTL file
  */
 export function parseOBJ(
   buffer: ArrayBuffer,
   fileName: string,
-  onProgress?: (progress: number, message: string) => void
+  onProgress?: (progress: number, message: string) => void,
+  mtlFile?: MTLFile | null
 ): CADAssembly {
   onProgress?.(0, 'Decoding OBJ file...');
   
@@ -31,12 +38,18 @@ export function parseOBJ(
   const uvs: number[] = [];
   const groups: OBJGroup[] = [];
   
+  // MTL materials (use provided or keep null)
+  const materials = mtlFile?.materials || null;
+  const mtlLibPaths: string[] = [];
+  
   let currentGroup: OBJGroup = {
     name: 'default',
     vertexIndices: [],
     normalIndices: [],
     uvIndices: [],
   };
+  
+  let currentMaterialName: string | undefined;
   
   onProgress?.(5, 'Parsing vertices and faces...');
   const progressInterval = Math.floor(lines.length / 20);
@@ -86,7 +99,34 @@ export function parseOBJ(
           vertexIndices: [],
           normalIndices: [],
           uvIndices: [],
+          materialName: currentMaterialName,
         };
+        break;
+        
+      case 'mtllib': // Material library
+        // Store MTL file path for later loading
+        const mtlPath = parts.slice(1).join(' ');
+        if (mtlPath) {
+          mtlLibPaths.push(mtlPath);
+        }
+        break;
+        
+      case 'usemtl': // Use material
+        // Change material for subsequent faces
+        currentMaterialName = parts.slice(1).join(' ') || undefined;
+        // If current group has faces, start a new group with new material
+        if (currentGroup.vertexIndices.length > 0 && currentGroup.materialName !== currentMaterialName) {
+          groups.push(currentGroup);
+          currentGroup = {
+            name: currentGroup.name,
+            vertexIndices: [],
+            normalIndices: [],
+            uvIndices: [],
+            materialName: currentMaterialName,
+          };
+        } else {
+          currentGroup.materialName = currentMaterialName;
+        }
         break;
     }
     
@@ -104,6 +144,18 @@ export function parseOBJ(
   // If no groups were defined, create one with all faces
   if (groups.length === 0) {
     groups.push(currentGroup);
+  }
+  
+  // Try to load MTL file if referenced
+  if (mtlLibPaths.length > 0) {
+    onProgress?.(55, 'Loading material file...');
+    try {
+      // Note: In a real implementation, we'd need to fetch the MTL file
+      // For now, we'll handle this in the loader which has access to the file system
+      // The MTL loading will be handled by the loader before calling parseOBJ
+    } catch (error) {
+      console.warn('[OBJ Parser] Failed to load MTL file:', error);
+    }
   }
   
   onProgress?.(60, 'Building geometries...');
@@ -139,6 +191,16 @@ export function parseOBJ(
     geometries.set(geometryId, geometry);
     totalTriangles += result.triangleCount;
     
+    // Get material if group has one
+    let partMetadata;
+    if (group.materialName && materials?.has(group.materialName)) {
+      const mtlMaterial = materials.get(group.materialName)!;
+      const cadMaterial = mtlToCADMaterial(mtlMaterial);
+      partMetadata = {
+        color: cadMaterial.color,
+      };
+    }
+    
     parts.push({
       id: partId,
       name: group.name,
@@ -148,6 +210,7 @@ export function parseOBJ(
       geometryId,
       visible: true,
       selected: false,
+      metadata: partMetadata,
     });
     
     const progress = 60 + (gi / groups.length) * 35;
