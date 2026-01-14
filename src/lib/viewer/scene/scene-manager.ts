@@ -186,16 +186,17 @@ export class SceneManager {
       });
       
       const mesh = this.createPartMesh(part, geometry);
+      const material = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
       console.log(`[SceneManager] Mesh created:`, {
         meshId: mesh.uuid,
         visible: mesh.visible,
         position: mesh.position.toArray(),
         geometry: mesh.geometry.uuid,
-        material: {
-          type: mesh.material?.type,
-          color: (mesh.material as any)?.color?.getHex?.() || 'N/A',
-          visible: mesh.material?.visible,
-        },
+        material: material ? {
+          type: (material as any).type,
+          color: (material as any)?.color?.getHex?.() || 'N/A',
+          visible: material.visible,
+        } : 'No material',
       });
       
       this.assemblyGroup.add(mesh);
