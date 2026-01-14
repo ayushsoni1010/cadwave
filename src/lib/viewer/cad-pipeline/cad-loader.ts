@@ -8,6 +8,7 @@ import type { CADAssembly, CADFormat, LoadingProgress } from '../types';
 import { detectFormat, isFormatSupported, getParserRecommendation } from './format-detector';
 import { parseSTL } from './stl-parser';
 import { parseOBJ } from './obj-parser';
+import { parseSTEP } from './step-parser';
 import { getGeometryCache } from './geometry-cache';
 import { FILE_LIMITS } from '../constants';
 
@@ -202,6 +203,8 @@ async function parseByFormat(
       return parseSTL(buffer, fileName, onProgress);
     case 'obj':
       return parseOBJ(buffer, fileName, onProgress);
+    case 'step':
+      return parseSTEP(buffer, fileName, onProgress);
     case 'gltf':
       // GLTF loading will be handled by Three.js GLTFLoader
       // For now, throw an error - we'll integrate later
