@@ -47,9 +47,17 @@ function formatFromExtension(ext: string): CADFormat {
       return 'stl';
     case 'obj':
       return 'obj';
+    case 'mtl':
+      return 'mtl';
     case 'gltf':
     case 'glb':
       return 'gltf';
+    case '3ds':
+      return '3ds';
+    case 'max':
+      // .max files are proprietary 3ds Max format
+      // Suggest exporting to .3ds instead
+      return '3ds'; // Treat as 3ds for detection, but show warning later
     default:
       return 'unknown';
   }
@@ -152,8 +160,12 @@ export function getFormatName(format: CADFormat): string {
       return 'STL (Stereolithography)';
     case 'obj':
       return 'Wavefront OBJ';
+    case 'mtl':
+      return 'Material Template Library';
     case 'gltf':
       return 'glTF';
+    case '3ds':
+      return '3D Studio (3DS)';
     default:
       return 'Unknown';
   }
@@ -163,20 +175,28 @@ export function getFormatName(format: CADFormat): string {
  * Check if format is supported for full parsing
  */
 export function isFormatSupported(format: CADFormat): boolean {
-  // We support STL, OBJ, GLTF, and STEP
+  // We support STL, OBJ, GLTF, STEP, 3DS, and MTL (for OBJ materials)
   // IGES support can be added later
-  return ['stl', 'obj', 'gltf', 'step'].includes(format);
+  // Note: MTL is loaded automatically with OBJ files, so it's "supported" but not standalone
+  return ['stl', 'obj', 'gltf', 'step', '3ds'].includes(format);
 }
 
 /**
  * Get parser recommendation for unsupported formats
  */
-export function getParserRecommendation(format: CADFormat): string | null {
+export function getParserRecommendation(format: CADFormat, fileName?: string): string | null {
+  // Check if file is .max but detected as 3ds
+  if (format === '3ds' && fileName?.toLowerCase().endsWith('.max')) {
+    return '3ds Max (.max) files are proprietary. Please export to .3ds format from 3ds Max, then load the .3ds file.';
+  }
+  
   switch (format) {
+    case 'mtl':
+      return 'MTL files are loaded automatically with OBJ files. Please load the associated .obj file instead.';
     case 'iges':
       return 'IGES support is coming soon. For now, convert to STL, GLTF, or STEP using FreeCAD, OpenSCAD, or similar tools.';
     case 'unknown':
-      return 'File format not recognized. Please use STL, OBJ, GLTF, or STEP files.';
+      return 'File format not recognized. Please use STL, OBJ, GLTF, STEP, or 3DS files.';
     default:
       return null;
   }

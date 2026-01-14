@@ -12,7 +12,7 @@ import type * as THREE from 'three';
 /**
  * Supported CAD file formats
  */
-export type CADFormat = 'step' | 'iges' | 'stl' | 'obj' | 'gltf' | 'unknown';
+export type CADFormat = 'step' | 'iges' | 'stl' | 'obj' | 'gltf' | '3ds' | 'mtl' | 'unknown';
 
 /**
  * A single part in a CAD assembly
