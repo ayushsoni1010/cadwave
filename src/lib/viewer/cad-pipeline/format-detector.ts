@@ -163,9 +163,9 @@ export function getFormatName(format: CADFormat): string {
  * Check if format is supported for full parsing
  */
 export function isFormatSupported(format: CADFormat): boolean {
-  // Currently we support STL, OBJ, and GLTF
-  // STEP and IGES require specialized parsers (opencascade.js)
-  return ['stl', 'obj', 'gltf'].includes(format);
+  // We support STL, OBJ, GLTF, and STEP
+  // IGES support can be added later
+  return ['stl', 'obj', 'gltf', 'step'].includes(format);
 }
 
 /**
@@ -173,11 +173,10 @@ export function isFormatSupported(format: CADFormat): boolean {
  */
 export function getParserRecommendation(format: CADFormat): string | null {
   switch (format) {
-    case 'step':
     case 'iges':
-      return 'For STEP/IGES support, convert to STL or GLTF using FreeCAD, OpenSCAD, or similar tools.';
+      return 'IGES support is coming soon. For now, convert to STL, GLTF, or STEP using FreeCAD, OpenSCAD, or similar tools.';
     case 'unknown':
-      return 'File format not recognized. Please use STL, OBJ, or GLTF files.';
+      return 'File format not recognized. Please use STL, OBJ, GLTF, or STEP files.';
     default:
       return null;
   }
