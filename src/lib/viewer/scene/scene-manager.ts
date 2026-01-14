@@ -152,25 +152,104 @@ export class SceneManager {
    * Load and display a CAD assembly
    */
   loadAssembly(assembly: CADAssembly): void {
+    console.log('[SceneManager] loadAssembly called:', {
+      assemblyId: assembly.id,
+      assemblyName: assembly.name,
+      format: assembly.format,
+      partCount: assembly.parts.length,
+      geometryCount: assembly.geometries.size,
+      totalTriangles: assembly.totalTriangles,
+    });
+    
     // Clear existing
     this.clearAssembly();
     
     // Build geometries and meshes
-    for (const part of assembly.parts) {
+    console.log('[SceneManager] Creating meshes for', assembly.parts.length, 'parts');
+    for (let i = 0; i < assembly.parts.length; i++) {
+      const part = assembly.parts[i];
+      console.log(`[SceneManager] Processing part ${i + 1}/${assembly.parts.length}:`, {
+        partId: part.id,
+        partName: part.name,
+        geometryId: part.geometryId,
+        visible: part.visible,
+      });
+      
       const geometry = this.getOrCreateGeometry(assembly, part.geometryId);
+      console.log(`[SceneManager] Geometry created:`, {
+        hasPosition: !!geometry.attributes.position,
+        hasNormal: !!geometry.attributes.normal,
+        hasIndex: !!geometry.index,
+        positionCount: geometry.attributes.position?.count || 0,
+        indexCount: geometry.index?.count || 0,
+        boundingBox: geometry.boundingBox,
+      });
+      
       const mesh = this.createPartMesh(part, geometry);
+      console.log(`[SceneManager] Mesh created:`, {
+        meshId: mesh.uuid,
+        visible: mesh.visible,
+        position: mesh.position.toArray(),
+        geometry: mesh.geometry.uuid,
+        material: {
+          type: mesh.material?.type,
+          color: (mesh.material as any)?.color?.getHex?.() || 'N/A',
+          visible: mesh.material?.visible,
+        },
+      });
+      
       this.assemblyGroup.add(mesh);
       this.partMeshMap.set(part.id, mesh);
     }
     
+    console.log('[SceneManager] Assembly group children count:', this.assemblyGroup.children.length);
+    
     // Compute assembly bounds
     this.computeAssemblyBounds();
+    console.log('[SceneManager] Assembly bounds:', {
+      min: this.assemblyBounds.min.toArray(),
+      max: this.assemblyBounds.max.toArray(),
+      center: this.assemblyBounds.getCenter(new THREE.Vector3()).toArray(),
+      size: this.assemblyBounds.getSize(new THREE.Vector3()).toArray(),
+      isEmpty: this.assemblyBounds.isEmpty(),
+    });
+    
+    // Check if bounds are valid
+    if (this.assemblyBounds.isEmpty()) {
+      console.warn('[SceneManager] WARNING: Assembly bounds are empty!');
+    }
+    
+    const size = this.assemblyBounds.getSize(new THREE.Vector3());
+    if (size.x === 0 && size.y === 0 && size.z === 0) {
+      console.warn('[SceneManager] WARNING: Assembly has zero size!');
+    }
+    
+    // Log first few mesh positions
+    if (this.assemblyGroup.children.length > 0) {
+      console.log('[SceneManager] First 3 mesh positions:', 
+        this.assemblyGroup.children.slice(0, 3).map((child: any) => ({
+          position: child.position?.toArray(),
+          visible: child.visible,
+          geometry: child.geometry?.attributes?.position?.count,
+        }))
+      );
+    }
     
     // Fit camera to assembly
     this.cameraController.fitToBounds(this.assemblyBounds);
     
+    // Log camera state after fit
+    console.log('[SceneManager] Camera after fitToBounds:', {
+      position: this.camera.position.toArray(),
+      target: this.cameraController.getTarget().toArray(),
+      fov: this.camera.fov,
+      near: this.camera.near,
+      far: this.camera.far,
+    });
+    
     // Start rendering
     this.startRendering();
+    console.log('[SceneManager] Rendering started');
   }
   
   /**
@@ -196,23 +275,55 @@ export class SceneManager {
    * Build Three.js geometry from CAD geometry data
    */
   private buildThreeGeometry(cadGeometry: CADGeometry): THREE.BufferGeometry {
+    console.log('[SceneManager] buildThreeGeometry:', {
+      geometryId: cadGeometry.id,
+      positionsLength: cadGeometry.positions.length,
+      normalsLength: cadGeometry.normals.length,
+      indicesLength: cadGeometry.indices.length,
+      triangleCount: cadGeometry.triangleCount,
+    });
+    
     const geometry = new THREE.BufferGeometry() as BVHBufferGeometry;
     
-    geometry.setAttribute('position', new THREE.BufferAttribute(cadGeometry.positions, 3));
-    geometry.setAttribute('normal', new THREE.BufferAttribute(cadGeometry.normals, 3));
-    geometry.setIndex(new THREE.BufferAttribute(cadGeometry.indices, 1));
-    
-    if (cadGeometry.uvs) {
-      geometry.setAttribute('uv', new THREE.BufferAttribute(cadGeometry.uvs, 2));
-    }
-    
-    geometry.computeBoundingBox();
-    geometry.computeBoundingSphere();
-    
-    // Build BVH for fast raycasting
-    if (this.config.enableBVH) {
-      const bvh = new MeshBVH(geometry as THREE.BufferGeometry);
-      geometry.boundsTree = bvh;
+    try {
+      geometry.setAttribute('position', new THREE.BufferAttribute(cadGeometry.positions, 3));
+      console.log('[SceneManager] Position attribute set:', {
+        count: geometry.attributes.position.count,
+        itemSize: geometry.attributes.position.itemSize,
+      });
+      
+      geometry.setAttribute('normal', new THREE.BufferAttribute(cadGeometry.normals, 3));
+      console.log('[SceneManager] Normal attribute set:', {
+        count: geometry.attributes.normal.count,
+        itemSize: geometry.attributes.normal.itemSize,
+      });
+      
+      geometry.setIndex(new THREE.BufferAttribute(cadGeometry.indices, 1));
+      console.log('[SceneManager] Index attribute set:', {
+        count: geometry.index?.count || 0,
+        itemSize: geometry.index?.itemSize || 0,
+      });
+      
+      if (cadGeometry.uvs) {
+        geometry.setAttribute('uv', new THREE.BufferAttribute(cadGeometry.uvs, 2));
+      }
+      
+      geometry.computeBoundingBox();
+      geometry.computeBoundingSphere();
+      
+      console.log('[SceneManager] Geometry computed:', {
+        boundingBox: geometry.boundingBox,
+        boundingSphere: geometry.boundingSphere,
+      });
+      
+      // Build BVH for fast raycasting
+      if (this.config.enableBVH) {
+        const bvh = new MeshBVH(geometry as THREE.BufferGeometry);
+        geometry.boundsTree = bvh;
+      }
+    } catch (error) {
+      console.error('[SceneManager] Error building geometry:', error);
+      throw error;
     }
     
     return geometry as THREE.BufferGeometry;
