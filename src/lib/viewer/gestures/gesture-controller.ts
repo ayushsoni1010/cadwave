@@ -128,7 +128,6 @@ export class GestureController {
    * Load MediaPipe dynamically
    */
   private async loadMediaPipe(): Promise<{ Hands: new (options: { locateFile: (file: string) => string }) => MediaPipeHands }> {
-    // @ts-expect-error - Dynamic import of MediaPipe
     const module = await import('@mediapipe/hands');
     return module;
   }

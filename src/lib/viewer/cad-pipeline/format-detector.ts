@@ -87,7 +87,7 @@ function formatFromContent(buffer: ArrayBuffer): CADFormat {
     const trimmed = line.trim();
     if (trimmed.length === 0) continue;
     const firstWord = trimmed.split(/\s+/)[0];
-    if (objPrefixes.includes(firstWord)) {
+    if (objPrefixes.includes(firstWord as typeof objPrefixes[number])) {
       objMatches++;
     }
   }

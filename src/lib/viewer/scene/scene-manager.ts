@@ -211,11 +211,11 @@ export class SceneManager {
     
     // Build BVH for fast raycasting
     if (this.config.enableBVH) {
-      const bvh = new MeshBVH(geometry);
+      const bvh = new MeshBVH(geometry as THREE.BufferGeometry);
       geometry.boundsTree = bvh;
     }
     
-    return geometry;
+    return geometry as THREE.BufferGeometry;
   }
   
   /**
@@ -223,7 +223,7 @@ export class SceneManager {
    */
   private createPartMesh(part: CADPart, geometry: THREE.BufferGeometry): PartMesh {
     const material = this.getOrCreateMaterial(part);
-    const mesh = new THREE.Mesh(geometry, material) as PartMesh;
+    const mesh = new THREE.Mesh(geometry, material) as unknown as PartMesh;
     
     // Apply transform
     const matrix = new THREE.Matrix4().fromArray(part.transform);

@@ -462,9 +462,10 @@ export type ParserWorkerOutput = ParserWorkerProgress | ParserWorkerResult | Par
 
 /**
  * Extended BufferGeometry with BVH
+ * Note: boundsTree property is provided by three-mesh-bvh type extensions
  */
-export interface BVHBufferGeometry extends THREE.BufferGeometry {
-  boundsTree?: unknown; // MeshBVH type
+export type BVHBufferGeometry = THREE.BufferGeometry & {
+  boundsTree?: any; // MeshBVH type from three-mesh-bvh
 }
 
 /**
